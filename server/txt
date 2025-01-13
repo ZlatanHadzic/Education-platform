@@ -1,0 +1,159 @@
+const express = require("express");
+require("dotenv").config();
+const cors = require("cors");
+const { HfInference } = require("@huggingface/inference");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+// Konfigurisanje Hugging Face API klijenta
+const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
+
+// Ruta za osnovnu putanju '/'
+app.get("/", (req, res) => {
+  console.log("Received GET request on /");
+  res.send("Hello, World!");
+});
+
+// Ruta za generisanje edukativnih materijala na osnovu korisničkog prompta
+app.post("/generate-lesson", async (req, res) => {
+  const { userPrompt } = req.body;
+
+  // Logovanje vrednosti da bismo proverili šta šaljemo
+  console.log("Received POST request on /generate-lesson");
+  console.log("Received prompt:", userPrompt);
+
+  // Provera da li je korisnik uneo prompt
+  if (!userPrompt) {
+    console.log("Error: Missing userPrompt in request body");
+    return res.status(400).json({
+      message: "Missing required field: userPrompt is required",
+    });
+  }
+
+  // Postavljanje parametara za generaciju
+  const generationArgs = {
+    max_tokens: 15000,  // Maksimalna dužina odgovora
+    temperature: 0.1,  // Kontroliše kreativnost generacije (nizak = precizniji odgovori)
+    top_p: 0.9,        // Preciznost generacije
+  };
+
+  // Logovanje parametara generacije
+  console.log("Generation parameters:", generationArgs);
+
+  try {
+    // Poziv Hugging Face API-ja za generisanje sadržaja koristeći korisnički prompt
+    console.log("Calling Hugging Face API...");
+    const response = await hf.textGeneration({
+      model: "microsoft/Phi-3.5-mini-instruct", // Model za generaciju teksta
+      inputs: userPrompt,
+      parameters: generationArgs,  // Dodajemo parametre za generaciju
+    });
+
+    // Logovanje odgovora
+    console.log("Response from Hugging Face API:", response);
+
+    // Vraćanje generisanog sadržaja
+    return res.status(200).json({
+      generatedText: response.generated_text.trim(),
+    });
+  } catch (error) {
+    console.error("Error:", error.message);
+    
+    // Logovanje greške
+    console.error("Full error:", error);
+    
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+});
+
+// Pokretanje servera na portu
+const port = process.env.PORT || 1000;
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
+
+
+
+import React, { useState } from 'react';
+
+const ContentGenerator = () => {
+    const [userPrompt, setUserPrompt] = useState('');
+    const [lessonContent, setLessonContent] = useState(null);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+
+        // Provera da li je prompt popunjen
+        if (!userPrompt) {
+            setError('Please enter a prompt');
+            return;
+        }
+
+        setLoading(true); // Početak učitavanja
+        setError(null); // Resetovanje greške
+
+        try {
+            const response = await fetch('http://localhost:1000/generate-lesson', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userPrompt, // Prosleđivanje korisničkog prompta
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch lesson content');
+            }
+
+            const data = await response.json();
+            setLessonContent(data.generatedText);
+            setError(null); // Resetovanje greške ako je zahtev uspešan
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false); // Završetak učitavanja
+        }
+    };
+
+    return (
+        <div>
+            <h2>Generate Lesson Plan</h2>
+            <form onSubmit={handleSubmit}>
+                <div>
+                    <label>Enter Prompt</label>
+                    <textarea
+                        value={userPrompt}
+                        onChange={(e) => setUserPrompt(e.target.value)}
+                        placeholder="Enter your prompt here"
+                        rows="5"
+                        cols="40"
+                    />
+                </div>
+                <button type="submit" disabled={loading}>Generate Lesson</button>
+            </form>
+
+            {loading && <p>Loading...</p>} {/* Prikazivanje indikatora učitavanja */}
+
+            {error && <p style={{ color: 'red' }}>{error}</p>}
+
+            {lessonContent && (
+                <div>
+                    <h3>Generated Lesson:</h3>
+                    <pre>{lessonContent}</pre>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default ContentGenerator;
